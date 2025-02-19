@@ -23,7 +23,10 @@ st.title("Multilingual Research Paper Assistant with RAG")
 query = st.text_area("Enter your query in any language:")
 
 research_domain = st.selectbox("Select a research domain:", ["AI", "Health care", "Finance", "Education", "Agriculture", "Climate change", "Cyber security"])
+print(research_domain)
 recommended_papers = st.checkbox("Include research paper recommendations")
+if recommended_papers:
+    st.write("You selected to include research paper recommendations.")
 
 if query:
     # detected_lang = detect(query)
