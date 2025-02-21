@@ -1,78 +1,3 @@
-# import os
-# import arxiv
-# import chromadb
-# from langchain_community.embeddings import HuggingFaceEmbeddings
-# from pypdf import PdfReader
-
-# # Initialize ChromaDB
-# db_path = "./chromadb_store"
-# client = chromadb.PersistentClient(path=db_path)
-# collection = client.get_or_create_collection("research_papers")
-
-# # Load embedding model
-# embedding_model = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-
-# def download_papers(query, num_papers=5, save_folder="papers"):
-#     """ Downloads research papers from arXiv. """
-#     os.makedirs(save_folder, exist_ok=True)
-#     search = arxiv.Search(query=query, max_results=num_papers, sort_by=arxiv.SortCriterion.Relevance)
-
-#     paper_metadata = []
-#     for result in search.results():
-#         pdf_filename = f"{result.entry_id.split('/')[-1]}.pdf"
-#         pdf_path = os.path.join(save_folder, pdf_filename)
-
-#         try:
-#             result.download_pdf(dirpath=save_folder, filename=pdf_filename)
-#             print(f"✅ Downloaded: {pdf_filename}")
-
-#             paper_metadata.append({
-#                 "title": result.title,
-#                 "url": result.pdf_url,
-#                 "pdf_path": pdf_path
-#             })
-#         except Exception as e:
-#             print(f"❌ Failed to download {result.title}: {e}")
-
-#     return paper_metadata
-
-# def extract_text(paper_metadata):
-#     """ Extracts text from PDFs. """
-#     paper_texts = []
-#     for paper in paper_metadata:
-#         reader = PdfReader(paper["pdf_path"])
-#         text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
-#         paper_texts.append({"text": text, "metadata": paper})
-
-#     return paper_texts
-
-# def embed_papers_for_domains(domains, num_papers=5):
-#     """ Downloads, extracts, and embeds research papers for multiple domains. """
-#     for domain in domains:
-#         print(f"\n🔍 Processing domain: {domain}")
-#         paper_metadata = download_papers(query=domain, num_papers=num_papers)
-#         paper_texts = extract_text(paper_metadata)
-
-#         for i, paper in enumerate(paper_texts):
-#             embedding = embedding_model.embed_query(paper["text"])
-#             collection.add(
-#                 ids=[f"{domain}_paper_{i}"],
-#                 documents=[paper["text"]],
-#                 metadatas=[{
-#                     "title": paper["metadata"]["title"],
-#                     "url": paper["metadata"].get("url", "N/A"),
-#                     "domain": domain
-#                 }]
-#             )
-
-#         print(f"✅ Embedded {len(paper_texts)} papers for domain: {domain}")
-
-# # Define research domains
-# domains = ["Artificial intelligence", "cybersecurity" ,"Health Care", "Education", "Climate Change"]
-
-# # Run embedding
-# embed_papers_for_domains(domains, num_papers=5)
-
 import os
 import arxiv
 import chromadb
@@ -81,24 +6,23 @@ from pypdf import PdfReader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 # Initialize ChromaDB
+
 db_path = "./chromadb_store"
 client = chromadb.PersistentClient(path=db_path)
-collection = client.get_or_create_collection("research_papers")
 
-# Load embedding model
-embedding_model = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+# Create separate collections for different embedding models
+collection_minilm = client.get_or_create_collection("research_papers_minilm")
+collection_mpnet = client.get_or_create_collection("research_papers_mpnet")
+
+# Load embedding models
+embedding_model_minilm = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+embedding_model_mpnet = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MPNet-base-v2")
 
 # Define research domains with mapping to app domains
-domain_mapping = {
-    "Artificial intelligence and machine learning": "AI",
-    "Healthcare informatics and medical technologies": "Health care",
-    "Sustainable agriculture and food systems": "Agriculture",
-    "Climate change mitigation and adaptation": "Climate change",
-    "Cybersecurity and network defense": "Cyber security"
-}
+research_domains = ["AI", "Education", "Computer Vision", "Agriculture", "Healthcare"]
 
-def download_papers(query, num_papers=4, save_folder="papers"):
-    """ Downloads research papers from arXiv. """
+def download_papers(query, domain, num_papers=4, save_folder="papers"):
+    """Downloads research papers from arXiv and assigns them to a specific research domain."""
     os.makedirs(save_folder, exist_ok=True)
     search = arxiv.Search(query=query, max_results=num_papers+2, sort_by=arxiv.SortCriterion.Relevance)
 
@@ -106,28 +30,30 @@ def download_papers(query, num_papers=4, save_folder="papers"):
     for result in search.results():
         if len(paper_metadata) >= num_papers:
             break
-            
+
         pdf_filename = f"{result.entry_id.split('/')[-1]}.pdf"
         pdf_path = os.path.join(save_folder, pdf_filename)
 
         try:
             result.download_pdf(dirpath=save_folder, filename=pdf_filename)
-            print(f"✅ Downloaded: {pdf_filename}")
+            print(f"Downloaded: {pdf_filename}")
 
             paper_metadata.append({
                 "title": result.title,
                 "url": result.pdf_url,
                 "authors": ", ".join([author.name for author in result.authors]),
                 "published": str(result.published),
-                "pdf_path": pdf_path
+                "pdf_path": pdf_path,
+                "domain": domain  # Assign the paper to the selected domain
             })
         except Exception as e:
-            print(f"❌ Failed to download {result.title}: {e}")
+            print(f"Failed to download {result.title}: {e}")
 
     return paper_metadata
 
 def extract_and_chunk_text(paper_metadata):
-    """ Extracts text from PDFs and chunks it for better retrieval. """
+    """Extracts text from PDFs, chunks it, and retains domain information for retrieval."""
+    
     paper_chunks = []
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,
@@ -139,27 +65,27 @@ def extract_and_chunk_text(paper_metadata):
         try:
             reader = PdfReader(paper["pdf_path"])
             text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
-            
+
             # Try to extract abstract
             abstract_start = text.lower().find("abstract")
             abstract_end = text.lower().find("introduction")
             if abstract_start > 0 and abstract_end > abstract_start:
                 abstract = text[abstract_start:abstract_end]
             else:
-                # If can't find proper abstract boundaries, take first part
-                abstract = text[:1500]
+                abstract = text[:1500]  # Fallback if no clear abstract section
             
             # Chunk the text
             chunks = text_splitter.split_text(text)
             
-            # Add each chunk
+            # Assign each chunk its metadata, including domain
             for i, chunk in enumerate(chunks):
                 paper_chunks.append({
                     "text": chunk,
                     "metadata": {
-                        **paper,
+                        **paper,  # Inherit all original metadata (title, authors, etc.)
                         "chunk_id": i,
-                        "abstract": abstract
+                        "abstract": abstract,
+                        "domain": paper["domain"]  # Ensure the domain is retained
                     }
                 })
         except Exception as e:
@@ -168,82 +94,60 @@ def extract_and_chunk_text(paper_metadata):
     return paper_chunks
 
 def embed_papers_for_domains():
-    """ Downloads, extracts, and embeds research papers for multiple domains. """
+    """Downloads, processes, and embeds research papers for the predefined domains."""
+
     total_papers = 0
-    
-    # Check if collection already has papers
-    existing = collection.get()
-    if len(existing["ids"]) > 0:
-        print(f"⚠️ Collection already contains {len(existing['ids'])} documents.")
-        clear = input("Do you want to clear the existing collection? (y/n): ")
-        if clear.lower() == "y":
-            collection.delete(ids=existing["ids"])
-            print("✅ Collection cleared.")
-        else:
-            print("⚠️ Skipping paper processing. Collection already contains data.")
-            return
-    
-    for search_query, app_domain in domain_mapping.items():
-        print(f"\n🔍 Processing domain: {app_domain} (Search query: {search_query})")
-        paper_metadata = download_papers(query=search_query, num_papers=4)
+    existing_minilm = collection_minilm.get()
+    existing_mpnet = collection_mpnet.get()
+
+    if len(existing_minilm["ids"]) > 0 and len(existing_mpnet["ids"]) > 0:
+        print(f"ChromaDB already contains {len(existing_minilm['ids'])} MiniLM and {len(existing_mpnet['ids'])} MPNet documents. Skipping download.")
+        return  
+
+    for domain in research_domains:
+        print(f"\n Downloading research papers for domain: {domain}...")
+
+        # Pass the correct domain to the download function
+        paper_metadata = download_papers(query=domain, domain=domain, num_papers=4)
         paper_chunks = extract_and_chunk_text(paper_metadata)
 
-        # Track unique papers for this domain
-        domain_papers = set()
-        
         for i, chunk in enumerate(paper_chunks):
             paper_title = chunk["metadata"]["title"]
-            
-            # Generate unique ID for each chunk
-            chunk_id = f"{app_domain}_{paper_title[:20].replace(' ', '_')}_{chunk['metadata']['chunk_id']}"
-            
-            # Add to domain papers tracking
-            domain_papers.add(paper_title)
-            
-            try:
-                # Create embedding for the chunk
-                embedding = embedding_model.embed_query(chunk["text"])
-                
-                # Add to collection
-                collection.add(
-                    ids=[chunk_id],
-                    embeddings=[embedding],
-                    documents=[chunk["text"]],
-                    metadatas=[{
-                        "title": chunk["metadata"]["title"],
-                        "url": chunk["metadata"]["url"],
-                        "authors": chunk["metadata"]["authors"],
-                        "published": chunk["metadata"]["published"],
-                        "domain": app_domain,
-                        "chunk_id": chunk["metadata"]["chunk_id"],
-                        "abstract": chunk["metadata"]["abstract"][:500]  # Truncate long abstracts
-                    }]
-                )
-            except Exception as e:
-                print(f"❌ Error embedding chunk {i} from {paper_title}: {e}")
+            chunk_id = f"{domain}_{paper_title[:20].replace(' ', '_')}_{chunk['metadata']['chunk_id']}"
 
-        print(f"✅ Embedded {len(domain_papers)} papers ({len(paper_chunks)} chunks) for domain: {app_domain}")
-        total_papers += len(domain_papers)
-    
-    # Verify the database contents
-    all_docs = collection.get()
-    print(f"\n📊 Database Statistics:")
-    print(f"Total documents: {len(all_docs['ids'])}")
-    
-    # Count documents per domain
-    domain_counts = {}
-    for metadata in all_docs["metadatas"]:
-        domain = metadata.get("domain", "Unknown")
-        if domain not in domain_counts:
-            domain_counts[domain] = 0
-        domain_counts[domain] += 1
-    
-    for domain, count in domain_counts.items():
-        print(f"  - {domain}: {count} chunks")
-    
-    print(f"\n✅ Successfully processed {total_papers} papers across {len(domain_mapping)} domains")
+            try:
+                # Generate embeddings for both models
+                embedding_minilm = embedding_model_minilm.embed_query(chunk["text"])
+                embedding_mpnet = embedding_model_mpnet.embed_query(chunk["text"])
+
+                # Add to MiniLM collection
+                collection_minilm.add(
+                    ids=[chunk_id],
+                    embeddings=[embedding_minilm],
+                    documents=[chunk["text"]],
+                    metadatas=[chunk["metadata"]]
+                )
+
+                # Add to MPNet collection
+                collection_mpnet.add(
+                    ids=[chunk_id],
+                    embeddings=[embedding_mpnet],
+                    documents=[chunk["text"]],
+                    metadatas=[chunk["metadata"]]
+                )
+                
+                print(f"Embedded chunk {i} from {paper_title} under domain: {domain}")
+
+            except Exception as e:
+                print(f"Error embedding chunk {i} from {paper_title}: {e}")
+
+        print(f"Embedded {len(paper_chunks)} chunks for domain: {domain}")
+        total_papers += len(paper_chunks)
+
+    print(f"\n**Final Database Statistics:** Total MiniLM documents = {len(collection_minilm.get()['ids'])}, Total MPNet documents = {len(collection_mpnet.get()['ids'])}")
 
 if __name__ == "__main__":
-    print("🚀 Starting Research Paper Processing")
+    print("Starting Research Paper Processing")
     embed_papers_for_domains()
-    print("✅ Processing complete!")
+    print("Processing complete!")
+

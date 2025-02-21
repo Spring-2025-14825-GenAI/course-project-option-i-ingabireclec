@@ -1,0 +1,10 @@
+streamlit
+chromadb
+langchain_community
+deep_translator
+langdetect
+langchain_google_vertexai
+google-cloud-aiplatform
+python-dotenv
+requests
+arxiv
