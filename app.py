@@ -93,7 +93,7 @@ selected_llm = llm_gemini_pro if llm_choice == "Gemini 1.5 Pro" else llm_gemini_
 query = st.text_area("Enter your research question in any language:")
 selected_domain = st.selectbox("Select a research domain:", available_domains)
 recommended_papers = st.checkbox(":page_facing_up: Include research paper recommendations")
-debug_mode = st.checkbox("Enable debug mode")
+# debug_mode = st.checkbox("Enable debug mode")
 
 # ------------------------------
 # 🌐 Language Detection & Validation
