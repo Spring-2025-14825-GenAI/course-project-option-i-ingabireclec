@@ -30,4 +30,4 @@ We tried modifying our text splitter chunk sizes from 300 tokens  to 1200 tokens
 #### Language Testing
 We tried querying in German about "Architekturen neuronaler Netzwerke" and compared results to English queries. It looked like German responses showed lower relevance despite having similar papers in our corpus.
 
-#### Video Link: https://cmuafricaexchange.slack.com/archives/D08E9CDH7A7/p1740113675342279
+#### Video Link: https://drive.google.com/file/d/1G9RadoGVJRNWqps5DIx3JmqYxfJyidCJ/view?usp=sharing
