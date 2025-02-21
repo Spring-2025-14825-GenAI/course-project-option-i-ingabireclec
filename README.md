@@ -29,3 +29,5 @@ Assumptions
 We tried modifying our text splitter chunk sizes from 300 tokens  to 1200 tokens. With narrow splits, responses contained more precise contextual relevant from the text but LLM often missed broader context. We were surprised that introduced more irrelevant information. We found out the optimal balance was around 800 tokens.
 #### Language Testing
 We tried querying in German about "Architekturen neuronaler Netzwerke" and compared results to English queries. It looked like German responses showed lower relevance despite having similar papers in our corpus.
+
+#### Video Link: https://cmuafricaexchange.slack.com/archives/D08E9CDH7A7/p1740113675342279
